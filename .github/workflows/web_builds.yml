@@ -1,6 +1,9 @@
 name: 🌐 Web Builds
 on:
   workflow_call:
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: true
 
 # Global Settings
 env:
@@ -46,6 +49,8 @@ jobs:
           platform: web
           target: template_release
           tests: false
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact

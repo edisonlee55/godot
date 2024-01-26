@@ -1,6 +1,9 @@
 name: 🍎 macOS Builds
 on:
   workflow_call:
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: true
 
 # Global Settings
 env:
@@ -55,6 +58,8 @@ jobs:
           platform: macos
           target: ${{ matrix.target }}
           tests: ${{ matrix.tests }}
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Prepare artifact
         run: |

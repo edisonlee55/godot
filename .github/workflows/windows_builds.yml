@@ -1,6 +1,9 @@
 name: 🏁 Windows Builds
 on:
   workflow_call:
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: true
 
 # Global Settings
 # SCONS_CACHE for windows must be set in the build environment
@@ -59,6 +62,8 @@ jobs:
           platform: windows
           target: ${{ matrix.target }}
           tests: ${{ matrix.tests }}
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Prepare artifact
         run: |

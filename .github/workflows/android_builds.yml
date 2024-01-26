@@ -1,6 +1,9 @@
 name: 🤖 Android Builds
 on:
   workflow_call:
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: true
 
 # Global Settings
 env:
@@ -40,6 +43,8 @@ jobs:
           platform: android
           target: template_release
           tests: false
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Compilation (arm64)
         uses: ./.github/actions/godot-build
@@ -48,6 +53,8 @@ jobs:
           platform: android
           target: template_release
           tests: false
+        env:
+          SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
       - name: Generate Godot templates
         run: |
