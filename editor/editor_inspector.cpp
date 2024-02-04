@@ -436,6 +436,10 @@ void EditorProperty::set_doc_path(const String &p_doc_path) {
 	doc_path = p_doc_path;
 }
 
+void EditorProperty::set_internal(bool p_internal) {
+	internal = p_internal;
+}
+
 void EditorProperty::update_property() {
 	GDVIRTUAL_CALL(_update_property);
 }
@@ -748,10 +752,10 @@ void EditorProperty::shortcut_input(const Ref<InputEvent> &p_event) {
 		if (ED_IS_SHORTCUT("property_editor/copy_value", p_event)) {
 			menu_option(MENU_COPY_VALUE);
 			accept_event();
-		} else if (ED_IS_SHORTCUT("property_editor/paste_value", p_event) && !is_read_only()) {
+		} else if (!is_read_only() && ED_IS_SHORTCUT("property_editor/paste_value", p_event)) {
 			menu_option(MENU_PASTE_VALUE);
 			accept_event();
-		} else if (ED_IS_SHORTCUT("property_editor/copy_property_path", p_event)) {
+		} else if (!internal && ED_IS_SHORTCUT("property_editor/copy_property_path", p_event)) {
 			menu_option(MENU_COPY_PROPERTY_PATH);
 			accept_event();
 		}
@@ -1036,6 +1040,8 @@ void EditorProperty::_update_popup() {
 	menu->add_icon_shortcut(get_editor_theme_icon(SNAME("ActionPaste")), ED_GET_SHORTCUT("property_editor/paste_value"), MENU_PASTE_VALUE);
 	menu->add_icon_shortcut(get_editor_theme_icon(SNAME("CopyNodePath")), ED_GET_SHORTCUT("property_editor/copy_property_path"), MENU_COPY_PROPERTY_PATH);
 	menu->set_item_disabled(MENU_PASTE_VALUE, is_read_only());
+	menu->set_item_disabled(MENU_COPY_PROPERTY_PATH, internal);
+
 	if (!pin_hidden) {
 		menu->add_separator();
 		if (can_pin) {
@@ -2810,53 +2816,53 @@ void EditorInspector::update_tree() {
 
 			// `hint_script` should contain a native class name or a script path.
 			// Otherwise the category was probably added via `@export_category` or `_get_property_list()`.
+			// Do not add an icon, do not change the current class (`doc_name`) for custom categories.
 			if (p.hint_string.is_empty()) {
 				category->label = p.name;
 				category->set_tooltip_text(p.name);
-				continue; // Do not add an icon, do not change the current class (`doc_name`).
-			}
+			} else {
+				String type = p.name;
+				String label = p.name;
+				doc_name = p.name;
 
-			String type = p.name;
-			String label = p.name;
-			doc_name = p.name;
+				// Use category's owner script to update some of its information.
+				if (!EditorNode::get_editor_data().is_type_recognized(type) && ResourceLoader::exists(p.hint_string)) {
+					Ref<Script> scr = ResourceLoader::load(p.hint_string, "Script");
+					if (scr.is_valid()) {
+						StringName script_name = EditorNode::get_editor_data().script_class_get_name(scr->get_path());
 
-			// Use category's owner script to update some of its information.
-			if (!EditorNode::get_editor_data().is_type_recognized(type) && p.hint_string.length() && ResourceLoader::exists(p.hint_string)) {
-				Ref<Script> scr = ResourceLoader::load(p.hint_string, "Script");
-				if (scr.is_valid()) {
-					StringName script_name = EditorNode::get_editor_data().script_class_get_name(scr->get_path());
+						// Update the docs reference and the label based on the script.
+						Vector<DocData::ClassDoc> docs = scr->get_documentation();
+						if (!docs.is_empty()) {
+							// The documentation of a GDScript's main class is at the end of the array.
+							// Hacky because this isn't necessarily always guaranteed.
+							doc_name = docs[docs.size() - 1].name;
+						}
+						if (script_name != StringName()) {
+							label = script_name;
+						}
 
-					// Update the docs reference and the label based on the script.
-					Vector<DocData::ClassDoc> docs = scr->get_documentation();
-					if (!docs.is_empty()) {
-						// The documentation of a GDScript's main class is at the end of the array.
-						// Hacky because this isn't necessarily always guaranteed.
-						doc_name = docs[docs.size() - 1].name;
-					}
-					if (script_name != StringName()) {
-						label = script_name;
-					}
-
-					// Find the icon corresponding to the script.
-					if (script_name != StringName()) {
-						category->icon = EditorNode::get_singleton()->get_class_icon(script_name);
-					} else {
-						category->icon = EditorNode::get_singleton()->get_object_icon(scr.ptr(), "Object");
+						// Find the icon corresponding to the script.
+						if (script_name != StringName()) {
+							category->icon = EditorNode::get_singleton()->get_class_icon(script_name);
+						} else {
+							category->icon = EditorNode::get_singleton()->get_object_icon(scr.ptr(), "Object");
+						}
 					}
 				}
-			}
 
-			if (category->icon.is_null() && !type.is_empty()) {
-				category->icon = EditorNode::get_singleton()->get_class_icon(type);
-			}
+				if (category->icon.is_null() && !type.is_empty()) {
+					category->icon = EditorNode::get_singleton()->get_class_icon(type);
+				}
 
-			// Set the category label.
-			category->label = label;
-			category->doc_class_name = doc_name;
+				// Set the category label.
+				category->label = label;
+				category->doc_class_name = doc_name;
 
-			if (use_doc_hints) {
-				// `|` separator used in `EditorHelpTooltip` for formatting.
-				category->set_tooltip_text("class|" + doc_name + "||");
+				if (use_doc_hints) {
+					// `|` separator used in `EditorHelpTooltip` for formatting.
+					category->set_tooltip_text("class|" + doc_name + "||");
+				}
 			}
 
 			// Add editors at the start of a category.
@@ -3329,7 +3335,11 @@ void EditorInspector::update_tree() {
 				if (use_doc_hints) {
 					// `|` separator used in `EditorHelpTooltip` for formatting.
 					if (theme_item_name.is_empty()) {
-						ep->set_tooltip_text("property|" + classname + "|" + property_prefix + p.name + "|");
+						if (p.usage & PROPERTY_USAGE_INTERNAL) {
+							ep->set_tooltip_text("internal_property|" + classname + "|" + property_prefix + p.name + "|");
+						} else {
+							ep->set_tooltip_text("property|" + classname + "|" + property_prefix + p.name + "|");
+						}
 					} else {
 						ep->set_tooltip_text("theme_item|" + classname + "|" + theme_item_name + "|");
 					}
@@ -3337,6 +3347,8 @@ void EditorInspector::update_tree() {
 				}
 
 				ep->set_doc_path(doc_path);
+				ep->set_internal(p.usage & PROPERTY_USAGE_INTERNAL);
+
 				ep->update_property();
 				ep->_update_pin_flags();
 				ep->update_editor_property_status();
@@ -3777,13 +3789,13 @@ void EditorInspector::_property_changed(const String &p_path, const Variant &p_v
 	// The "changing" variable must be true for properties that trigger events as typing occurs,
 	// like "text_changed" signal. E.g. text property of Label, Button, RichTextLabel, etc.
 	if (p_changing) {
-		this->changing++;
+		changing++;
 	}
 
 	_edit_set(p_path, p_value, p_update_all, p_name);
 
 	if (p_changing) {
-		this->changing--;
+		changing--;
 	}
 
 	if (restart_request_props.has(p_path)) {

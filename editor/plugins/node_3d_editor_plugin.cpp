@@ -1749,7 +1749,8 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					_edit.mode = TRANSFORM_NONE;
 					_edit.original = spatial_editor->get_gizmo_transform(); // To prevent to break when flipping with scale.
 
-					bool can_select_gizmos = spatial_editor->get_single_selected_node();
+					bool node_selected = spatial_editor->get_single_selected_node();
+					bool can_select_gizmos = node_selected;
 
 					{
 						int idx = view_menu->get_popup()->get_item_index(VIEW_GIZMOS);
@@ -1839,17 +1840,17 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 					clicked = ObjectID();
 
-					if (can_select_gizmos && ((spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_SELECT && b->is_command_or_control_pressed()) || spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_ROTATE)) {
+					if (node_selected && ((spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_SELECT && b->is_command_or_control_pressed()) || spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_ROTATE)) {
 						begin_transform(TRANSFORM_ROTATE, false);
 						break;
 					}
 
-					if (can_select_gizmos && spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_MOVE) {
+					if (node_selected && spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_MOVE) {
 						begin_transform(TRANSFORM_TRANSLATE, false);
 						break;
 					}
 
-					if (can_select_gizmos && spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_SCALE) {
+					if (node_selected && spatial_editor->get_tool_mode() == Node3DEditor::TOOL_MODE_SCALE) {
 						begin_transform(TRANSFORM_SCALE, false);
 						break;
 					}
@@ -2789,8 +2790,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 				}
 
 				Transform3D t = sp->get_global_gizmo_transform();
-				VisualInstance3D *vi = Object::cast_to<VisualInstance3D>(sp);
-				AABB new_aabb = vi ? vi->get_aabb() : _calculate_spatial_bounds(sp);
+				AABB new_aabb = _calculate_spatial_bounds(sp);
 
 				exist = true;
 				if (se->last_xform == t && se->aabb == new_aabb && !se->last_xform_dirty) {
@@ -2836,7 +2836,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 					last_message = message;
 				}
 
-				message_time -= get_physics_process_delta_time();
+				message_time -= get_process_delta_time();
 				if (message_time < 0) {
 					surface->queue_redraw();
 				}
@@ -4086,33 +4086,33 @@ Vector3 Node3DEditorViewport::_get_instance_position(const Point2 &p_pos) const 
 	return world_pos + world_ray * FALLBACK_DISTANCE;
 }
 
-AABB Node3DEditorViewport::_calculate_spatial_bounds(const Node3D *p_parent, bool p_exclude_top_level_transform) {
+AABB Node3DEditorViewport::_calculate_spatial_bounds(const Node3D *p_parent, const Node3D *p_top_level_parent) {
 	AABB bounds;
+
+	if (!p_top_level_parent) {
+		p_top_level_parent = p_parent;
+	}
+
+	if (!p_parent) {
+		return AABB(Vector3(-0.2, -0.2, -0.2), Vector3(0.4, 0.4, 0.4));
+	}
+
+	Transform3D xform_to_top_level_parent_space = p_top_level_parent->get_global_transform().affine_inverse() * p_parent->get_global_transform();
 
 	const VisualInstance3D *visual_instance = Object::cast_to<VisualInstance3D>(p_parent);
 	if (visual_instance) {
 		bounds = visual_instance->get_aabb();
+	} else {
+		bounds = AABB();
 	}
+	bounds = xform_to_top_level_parent_space.xform(bounds);
 
 	for (int i = 0; i < p_parent->get_child_count(); i++) {
 		Node3D *child = Object::cast_to<Node3D>(p_parent->get_child(i));
 		if (child) {
-			AABB child_bounds = _calculate_spatial_bounds(child, false);
-
-			if (bounds.size == Vector3() && p_parent) {
-				bounds = child_bounds;
-			} else {
-				bounds.merge_with(child_bounds);
-			}
+			AABB child_bounds = _calculate_spatial_bounds(child, p_top_level_parent);
+			bounds.merge_with(child_bounds);
 		}
-	}
-
-	if (bounds.size == Vector3() && !p_parent) {
-		bounds = AABB(Vector3(-0.2, -0.2, -0.2), Vector3(0.4, 0.4, 0.4));
-	}
-
-	if (!p_exclude_top_level_transform) {
-		bounds = p_parent->get_transform().xform(bounds);
 	}
 
 	return bounds;
@@ -6490,7 +6490,7 @@ void Node3DEditor::_init_indicators() {
 // 3D editor origin line shader.
 
 shader_type spatial;
-render_mode blend_mix,cull_disabled,unshaded, fog_disabled;
+render_mode blend_mix, cull_disabled, unshaded, fog_disabled;
 
 void vertex() {
 	vec3 point_a = MODEL_MATRIX[3].xyz;
@@ -6602,7 +6602,6 @@ void fragment() {
 		RS::get_singleton()->instance_set_layer_mask(origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
 		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
 		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
-		RS::get_singleton()->instance_set_ignore_culling(origin_instance, true);
 
 		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(origin_instance, RS::SHADOW_CASTING_SETTING_OFF);
 
@@ -8576,7 +8575,8 @@ Node3DEditor::Node3DEditor() {
 	settings_fov->set_step(0.1);
 	settings_fov->set_value(EDITOR_GET("editors/3d/default_fov"));
 	settings_fov->set_select_all_on_focus(true);
-	settings_vbc->add_margin_child(TTR("Perspective FOV (deg.):"), settings_fov);
+	settings_fov->set_tooltip_text(TTR("FOV is defined as a vertical value, as the editor camera always uses the Keep Height aspect mode."));
+	settings_vbc->add_margin_child(TTR("Perspective VFOV (deg.):"), settings_fov);
 
 	settings_znear = memnew(SpinBox);
 	settings_znear->set_max(MAX_Z);

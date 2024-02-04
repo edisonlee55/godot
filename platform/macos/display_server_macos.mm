@@ -160,6 +160,7 @@ DisplayServerMacOS::WindowID DisplayServerMacOS::_create_window(WindowMode p_mod
 							  defer:NO];
 		ERR_FAIL_NULL_V_MSG(wd.window_object, INVALID_WINDOW_ID, "Can't create a window");
 		[wd.window_object setWindowID:window_id_counter];
+		[wd.window_object setReleasedWhenClosed:NO];
 
 		wd.window_view = [[GodotContentView alloc] init];
 		ERR_FAIL_NULL_V_MSG(wd.window_view, INVALID_WINDOW_ID, "Can't create a window view");
@@ -478,6 +479,7 @@ void DisplayServerMacOS::_process_key_events() {
 			k->set_physical_keycode(ke.physical_keycode);
 			k->set_key_label(ke.key_label);
 			k->set_unicode(ke.unicode);
+			k->set_location(ke.location);
 
 			_push_input(k);
 		} else {
@@ -506,6 +508,7 @@ void DisplayServerMacOS::_process_key_events() {
 				k->set_keycode(ke.keycode);
 				k->set_physical_keycode(ke.physical_keycode);
 				k->set_key_label(ke.key_label);
+				k->set_location(ke.location);
 
 				if (i + 1 < key_event_pos && key_event_buffer[i + 1].keycode == Key::NONE) {
 					k->set_unicode(key_event_buffer[i + 1].unicode);
@@ -1673,6 +1676,10 @@ void DisplayServerMacOS::global_menu_set_item_text(const String &p_menu_root, in
 		NSMenuItem *menu_item = [menu itemAtIndex:p_idx];
 		if (menu_item) {
 			[menu_item setTitle:[NSString stringWithUTF8String:p_text.utf8().get_data()]];
+			NSMenu *sub_menu = [menu_item submenu];
+			if (sub_menu) {
+				[sub_menu setTitle:[NSString stringWithUTF8String:p_text.utf8().get_data()]];
+			}
 		}
 	}
 }
